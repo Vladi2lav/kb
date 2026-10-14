@@ -9,8 +9,16 @@
 <body>
   <header>
     <h1>Kanban</h1>
+    <div class="team">
+      <div id="people"></div>
+      <form id="add-person">
+        <input name="name" placeholder="+ Участник" autocomplete="off" maxlength="40" />
+      </form>
+    </div>
     <button id="reset" title="Очистить доску">Очистить</button>
   </header>
+
+  <div id="picker" class="picker" hidden></div>
 
   <main id="board"></main>
 

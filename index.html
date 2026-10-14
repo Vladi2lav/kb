@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kanban</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Kanban</h1>
+    <button id="reset" title="Очистить доску">Очистить</button>
+  </header>
+
+  <main id="board"></main>
+
+  <template id="column-tpl">
+    <section class="column">
+      <h2><span class="title"></span> <span class="count"></span></h2>
+      <ul class="cards"></ul>
+      <form class="add">
+        <input name="text" placeholder="+ Новая задача" autocomplete="off" />
+      </form>
+    </section>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

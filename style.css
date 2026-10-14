@@ -1,0 +1,111 @@
+:root {
+  --bg: #f4f5f7;
+  --col: #ebecf0;
+  --card: #ffffff;
+  --text: #172b4d;
+  --muted: #6b778c;
+  --accent: #0c66e4;
+  --drop: #dfe8fb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1d2125;
+    --col: #282e33;
+    --card: #343b42;
+    --text: #dee4ea;
+    --muted: #9fadbc;
+    --accent: #579dff;
+    --drop: #2c3d55;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+h1 { margin: 0; font-size: 22px; }
+
+button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+}
+button:hover { color: var(--text); }
+
+#board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  gap: 16px;
+  padding: 0 20px 20px;
+  align-items: start;
+  overflow-x: auto;
+}
+
+.column {
+  background: var(--col);
+  border-radius: 10px;
+  padding: 12px;
+  min-height: 120px;
+  transition: background .15s;
+}
+.column.over { background: var(--drop); }
+
+.column h2 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+}
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: 8px;
+}
+
+.card {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--card);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.15);
+  cursor: grab;
+  word-break: break-word;
+}
+.card.dragging { opacity: .4; }
+.card .text { flex: 1; outline: none; }
+.card .del { opacity: 0; font-size: 18px; line-height: 1; }
+.card:hover .del { opacity: 1; }
+
+.add input {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.add input:focus { background: var(--card); outline: 2px solid var(--accent); }
+
+@media (max-width: 760px) {
+  #board { grid-template-columns: 1fr; }
+}

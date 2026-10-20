@@ -29,6 +29,11 @@ npm start
 ```
 Открой http://localhost:3000. Данные лежат в `data/db.json`.
 
+## Render
+1. Тип сервиса — **Web Service** (не Static Site), Runtime: Node, Build Command: `npm install`, Start Command: `npm start`.
+2. Файловая система Render стирается при каждом деплое, поэтому данные храни вне её: создай бесплатную базу на upstash.com и добавь переменные `UPSTASH_REDIS_REST_URL` и `UPSTASH_REDIS_REST_TOKEN`. Другой вариант — подключить Persistent Disk (платно) и задать `DATA_DIR` равным пути к нему.
+3. Задай `APP_SECRET` (длинная случайная строка) — им подписываются сессии.
+
 ## Vercel
 1. Импортируй проект, Framework Preset: **Other** (если в репозитории проект лежит в подпапке — укажи её в Root Directory).
 2. Storage → подключи **Upstash Redis** (появятся `KV_REST_API_URL` и `KV_REST_API_TOKEN`).

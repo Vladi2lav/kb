@@ -171,7 +171,7 @@ input, textarea { font: inherit; color: var(--text); }
   padding: 0 20px 24px;
   align-items: flex-start;
   overflow-x: auto;
-  min-height: calc(100vh - 80px);
+  min-height: calc(100vh - 140px);
 }
 
 .column {
@@ -209,9 +209,6 @@ input, textarea { font: inherit; color: var(--text); }
 .cards { list-style: none; margin: 0; padding: 0; min-height: 6px; }
 
 .card {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
   background: var(--card);
   border-radius: 8px;
   padding: 9px 8px 9px 12px;
@@ -221,6 +218,7 @@ input, textarea { font: inherit; color: var(--text); }
   overflow-wrap: anywhere;
   border-left: 4px solid transparent;
 }
+.card-top { display: flex; gap: 6px; align-items: flex-start; }
 .card .text { flex: 1; white-space: pre-wrap; min-width: 0; padding-top: 1px; }
 .card .actions { display: flex; opacity: 0; margin: -3px -2px -3px 0; transition: opacity .1s; }
 .card:hover .actions, .card:focus-within .actions { opacity: 1; }
@@ -235,7 +233,50 @@ input, textarea { font: inherit; color: var(--text); }
 }
 body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
 
-.card.editing { display: block; cursor: default; padding: 6px; }
+.card.editing { cursor: default; padding: 6px; }
+.card-foot { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; cursor: pointer; width: fit-content; }
+.card-foot .avatar.lead { margin-right: 4px; }
+
+/* ---- команда ---- */
+.team { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 20px 12px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--col); border-radius: 999px;
+  padding: 3px 4px 3px 3px; font-size: 13px;
+}
+.chip-del { font-size: 15px; line-height: 1; padding: 0 4px; }
+.team input {
+  width: 140px; border: 0; border-radius: 999px;
+  padding: 6px 12px; background: transparent; font-size: 13px;
+}
+.team input:focus { background: var(--card); outline: 2px solid var(--accent); }
+
+.avatar {
+  display: inline-grid; place-items: center; flex: none;
+  width: 24px; height: 24px; border-radius: 50%;
+  color: #fff; font-size: 10px; font-weight: 600; letter-spacing: .02em;
+  position: relative;
+}
+.avatar.sm { width: 20px; height: 20px; font-size: 9px; }
+.avatar.lead { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px #f5a524; }
+.avatar.lead::after {
+  content: "★"; position: absolute; right: -6px; top: -8px;
+  font-size: 11px; color: #f5a524; text-shadow: 0 0 2px var(--card);
+}
+
+.picker { width: 240px; max-height: 340px; overflow: auto; display: grid; }
+.picker-hint { margin: 2px 6px 6px; font-size: 12px; color: var(--muted); }
+.picker-row { display: flex; align-items: center; justify-content: space-between; border-radius: 6px; }
+.picker-row:hover { background: var(--col); }
+.picker-row label { display: flex; align-items: center; gap: 8px; padding: 6px; flex: 1; cursor: pointer; min-width: 0; }
+.star { font-size: 17px; padding: 4px 8px; }
+.star.on { color: #f5a524; }
+.picker-add {
+  margin-top: 4px; padding: 7px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--bg); font-size: 13px;
+}
+.picker-add:focus { outline: 2px solid var(--accent); border-color: transparent; }
+.popover:has(.picker) { min-width: 0; }
 .card .edit {
   display: block;
   width: 100%;
@@ -356,4 +397,5 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
   .share-btn { display: none; }
   .topbar .bname { font-size: 19px; }
   #banner .notice { margin: 0 16px 12px; }
+  .team { padding: 0 16px 10px; }
 }

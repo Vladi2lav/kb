@@ -5,7 +5,8 @@ const LEGACY_DONE = "kanban-v1-imported";
 const SESS_KEY = "kb-sessions"; // { [boardId]: { name, token, at } }
 const COLORS = ["", "red", "orange", "yellow", "green", "blue", "purple"];
 const COLOR_NAMES = { "": "Без цвета", red: "Красный", orange: "Оранжевый", yellow: "Жёлтый", green: "Зелёный", blue: "Синий", purple: "Фиолетовый" };
-const MAX = { cards: 1000, columns: 12, text: 2000, colTitle: 40, name: 60 };
+const MAX = { cards: 1000, columns: 12, text: 2000, colTitle: 40, name: 60, people: 50, personName: 40 };
+const PEOPLE_COLORS = ["#e5484d", "#f76b15", "#ffb224", "#30a46c", "#12a594", "#0090ff", "#6e56cf", "#d6409f"];
 const POLL_MS = 5000;
 
 const ls = {
@@ -368,8 +369,8 @@ async function openBoard(id) {
   saveSession(id, data.name, sess.token);
   B = {
     id, token: sess.token, name: data.name, version: data.version,
-    columns: data.columns, cards: data.cards,
-    base: clone({ columns: data.columns, cards: data.cards }),
+    columns: data.columns, people: data.people || [], cards: data.cards,
+    base: clone({ columns: data.columns, people: data.people || [], cards: data.cards }),
     dirty: false, saving: false, failures: 0, importDone: false,
     editing: 0, dragging: false, needsRender: false, query: "",
     timer: null, poll: setInterval(poll, POLL_MS),
@@ -378,7 +379,7 @@ async function openBoard(id) {
 
   const lg = legacy();
   if (lg && data.importLegacy) {
-    const n = importCards(lg.cards);
+    const n = importCards(lg.cards, lg.people);
     B.importDone = true;
     ls.set(LEGACY_DONE, id);
     toast(`Перенёс ${cardsWord(n)} из старой доски`);
@@ -417,6 +418,7 @@ function renderBoardShell() {
       search,
       h("button", { class: "btn share-btn", onclick: share }, "Поделиться"),
       h("button", { class: "icon big", title: "Меню", "data-popover-anchor": true, onclick: (e) => boardMenu(e.currentTarget) }, "⋯")),
+    h("div", { id: "team", class: "team" }),
     h("div", { id: "banner" }),
     h("main", { id: "board" })
   );
@@ -459,6 +461,7 @@ function renderBoard() {
   const title = $(".topbar .bname");
   if (title) title.textContent = B.name;
   document.title = `${B.name} · Kanban`;
+  renderTeam();
   board.replaceChildren(
     ...B.columns.map(renderColumn),
     B.columns.length < MAX.columns && h("button", { class: "add-col", onclick: addColumn }, "+ Колонка")
@@ -486,7 +489,7 @@ function renderColumn(col) {
     const text = ta.value.trim();
     if (!text) return;
     if (B.cards.length >= MAX.cards) return toast(`На доске не больше ${MAX.cards} карточек`);
-    B.cards.push({ id: uid(), col: col.id, text, color: "" });
+    B.cards.push({ id: uid(), col: col.id, text, color: "", members: [], lead: null });
     ta.value = "";
     mutate();
   }
@@ -505,13 +508,21 @@ function renderCard(card) {
   const li = h("li", { class: "card" + (card.color ? ` c-${card.color}` : ""), dataset: { id: card.id } });
   const text = h("div", { class: "text" }, linkify(card.text));
   text.addEventListener("dblclick", (e) => { if (!e.target.closest("a")) editCard(card.id); });
-  li.append(
+  const top = h("div", { class: "card-top" },
     text,
     h("div", { class: "actions" },
       h("button", { class: "icon swatch-btn", title: "Цвет", "data-popover-anchor": true, onclick: (e) => colorMenu(card.id, e.currentTarget) }, h("span", { class: "dot" })),
+      h("button", { class: "icon people-btn", title: "Назначить людей", "data-popover-anchor": true, onclick: () => peoplePicker(card.id) }, "👤"),
       h("button", { class: "icon", title: "Изменить", onclick: () => editCard(card.id) }, "✎"),
-      h("button", { class: "icon", title: "Удалить", onclick: () => deleteCard(card.id) }, "×"))
-  );
+      h("button", { class: "icon", title: "Удалить", onclick: () => deleteCard(card.id) }, "×")));
+  li.append(top);
+  // люди на карточке: главный первым
+  const ids = [...card.members].sort((a, b) => (b === card.lead) - (a === card.lead));
+  const people = ids.map(findPerson).filter(Boolean);
+  if (people.length) {
+    li.append(h("div", { class: "card-foot", title: "Назначить людей", onclick: () => peoplePicker(card.id) },
+      people.map((p) => avatar(p, { lead: p.id === card.lead }))));
+  }
   li.addEventListener("pointerdown", (e) => dragStart(e, li));
   li.addEventListener("contextmenu", (e) => { if (drag) e.preventDefault(); });
   return li;
@@ -520,7 +531,7 @@ function renderCard(card) {
 function applyFilter() {
   if (!B) return;
   const q = B.query.trim().toLowerCase();
-  const text = new Map(B.cards.map((c) => [c.id, c.text.toLowerCase()]));
+  const text = new Map(B.cards.map((c) => [c.id, [c.text, ...c.members.map((id) => findPerson(id)?.name || "")].join(" ").toLowerCase()]));
   $("#board")?.classList.toggle("filtering", !!q);
   for (const li of $$("#board .card")) li.hidden = !!q && !text.get(li.dataset.id)?.includes(q);
 }
@@ -534,6 +545,123 @@ function mutate() {
 
 const findCard = (id) => B.cards.find((c) => c.id === id);
 const findCol = (id) => B.columns.find((c) => c.id === id);
+const findPerson = (id) => B.people.find((p) => p.id === id);
+
+// ---------- команда ----------
+
+function initials(name) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+}
+
+function avatar(p, { lead = false, small = false } = {}) {
+  return h("span", {
+    class: "avatar" + (small ? " sm" : "") + (lead ? " lead" : ""),
+    style: `background:${p.color}`,
+    title: p.name + (lead ? " — главный" : ""),
+  }, initials(p.name));
+}
+
+function nextColor() {
+  const used = new Set(B.people.map((p) => p.color));
+  return PEOPLE_COLORS.find((c) => !used.has(c)) || PEOPLE_COLORS[B.people.length % PEOPLE_COLORS.length];
+}
+
+function addPerson(name) {
+  name = name.trim().slice(0, MAX.personName);
+  if (!name) return null;
+  if (B.people.length >= MAX.people) { toast(`Не больше ${MAX.people} участников`); return null; }
+  const p = { id: uid(), name, color: nextColor() };
+  B.people.push(p);
+  return p;
+}
+
+function removePerson(id) {
+  const p = findPerson(id);
+  if (!p || !confirm(`Убрать ${p.name} из команды?`)) return;
+  B.people = B.people.filter((x) => x.id !== id);
+  for (const c of B.cards) {
+    c.members = c.members.filter((m) => m !== id);
+    if (c.lead === id) c.lead = null;
+  }
+  mutate();
+}
+
+function renderTeam() {
+  const team = $("#team");
+  if (!team) return;
+  const input = h("input", {
+    placeholder: "+ Участник", maxlength: MAX.personName, autocomplete: "off",
+    dataset: { focusKey: "add-person" },
+    onkeydown: (e) => {
+      if (e.key === "Enter" && !e.isComposing) {
+        e.preventDefault();
+        if (addPerson(input.value)) { input.value = ""; mutate(); }
+      }
+      if (e.key === "Escape") { input.value = ""; input.blur(); }
+    },
+  });
+  team.replaceChildren(
+    ...B.people.map((p) => h("span", { class: "chip" },
+      avatar(p, { small: true }), p.name,
+      h("button", { class: "chip-del", title: "Убрать из команды", onclick: () => removePerson(p.id) }, "×"))),
+    input
+  );
+}
+
+// выбор людей для карточки, ★ — главный
+function peoplePicker(cardId) {
+  const card = findCard(cardId);
+  const anchor = $(`#board .card[data-id="${CSS.escape(cardId)}"] .people-btn`);
+  if (!card || !anchor) return;
+  const reopen = () => { mutate(); peoplePicker(cardId); };
+
+  const rows = B.people.map((p) => {
+    const on = card.members.includes(p.id);
+    const isLead = card.lead === p.id;
+    return h("div", { class: "picker-row" },
+      h("label", {},
+        h("input", {
+          type: "checkbox", checked: on,
+          onchange: (e) => {
+            if (e.target.checked) card.members.push(p.id);
+            else {
+              card.members = card.members.filter((m) => m !== p.id);
+              if (card.lead === p.id) card.lead = null;
+            }
+            reopen();
+          },
+        }),
+        avatar(p, { small: true }), p.name),
+      h("button", {
+        class: "star" + (isLead ? " on" : ""), title: isLead ? "Снять главного" : "Сделать главным",
+        onclick: () => {
+          if (isLead) card.lead = null;
+          else {
+            card.lead = p.id;
+            if (!card.members.includes(p.id)) card.members.push(p.id);
+          }
+          reopen();
+        },
+      }, isLead ? "★" : "☆"));
+  });
+
+  const input = h("input", {
+    class: "picker-add", placeholder: "+ Новый участник", maxlength: MAX.personName, autocomplete: "off",
+    onkeydown: (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      const p = addPerson(input.value);
+      if (!p) return;
+      card.members.push(p.id);
+      reopen();
+      $(".popover .picker-add")?.focus();
+    },
+  });
+
+  popover(anchor, h("div", { class: "picker" },
+    h("p", { class: "picker-hint" }, B.people.length ? "Отметь участников, ★ — главный" : "В команде пока никого нет"),
+    rows, input));
+}
 
 function editCard(id) {
   const card = findCard(id);
@@ -658,7 +786,19 @@ function columnMenu(colId, anchor) {
   ]);
 }
 
-function importCards(list) {
+function importCards(list, people = []) {
+  // участники из источника: по id, иначе по имени
+  const personMap = new Map();
+  for (const p of Array.isArray(people) ? people : []) {
+    const name = String(p?.name ?? "").trim().slice(0, MAX.personName);
+    if (!name || typeof p.id !== "string") continue;
+    let existing = findPerson(p.id) || B.people.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    if (!existing && B.people.length < MAX.people) {
+      existing = { id: /^[a-zA-Z0-9_-]{1,24}$/.test(p.id) ? p.id : uid(), name, color: /^#[0-9a-fA-F]{6}$/.test(p.color) ? p.color : nextColor() };
+      B.people.push(existing);
+    }
+    if (existing) personMap.set(p.id, existing.id);
+  }
   const known = new Set(B.cards.map((c) => c.id));
   let n = 0;
   for (const c of list) {
@@ -669,10 +809,12 @@ function importCards(list) {
     if (known.has(id)) id = uid();
     known.add(id);
     const col = findCol(c.col) ? c.col : B.columns[0].id;
-    B.cards.push({ id, col, text, color: COLORS.includes(c.color) ? c.color : "" });
+    const members = [...new Set((Array.isArray(c.members) ? c.members : []).map((m) => personMap.get(m)).filter(Boolean))];
+    const lead = personMap.get(c.lead);
+    B.cards.push({ id, col, text, color: COLORS.includes(c.color) ? c.color : "", members, lead: members.includes(lead) ? lead : null });
     n++;
   }
-  if (n) mutate();
+  if (n || personMap.size) mutate();
   return n;
 }
 
@@ -681,7 +823,7 @@ function showLegacyBanner(lg) {
   banner.replaceChildren(h("div", { class: "notice row" },
     h("span", {}, `В этом браузере осталась доска из прошлой версии (${cardsWord(lg.cards.length)}).`),
     h("button", { class: "btn primary", onclick: () => {
-      const n = importCards(lg.cards);
+      const n = importCards(lg.cards, lg.people);
       ls.set(LEGACY_DONE, B.id);
       banner.replaceChildren();
       toast(`Перенёс ${cardsWord(n)}`);
@@ -704,7 +846,7 @@ async function flush() {
   b.saving = true;
   b.dirty = false;
   setSync("saving");
-  const snap = clone({ columns: b.columns, cards: b.cards });
+  const snap = clone({ columns: b.columns, people: b.people, cards: b.cards });
   let retry = 50;
   try {
     const r = await api("PUT", `boards/${b.id}`, { version: b.version, ...snap, importDone: b.importDone || undefined }, b.token);
@@ -723,6 +865,7 @@ async function flush() {
     } else if (e.status === 400 || e.status === 413) {
       toast(`Не сохранилось: ${e.message}`);
       b.columns = clone(b.base.columns);
+      b.people = clone(b.base.people);
       b.cards = clone(b.base.cards);
       renderBoard();
     } else {
@@ -766,8 +909,19 @@ function mergeRemote(remote) {
   if (!columns.length) columns.push(...remote.columns);
   const colIds = new Set(columns.map((c) => c.id));
   b.columns = columns;
-  b.cards = mergeList(b.base.cards, b.cards, remote.cards).map((c) => (colIds.has(c.col) ? c : { ...c, col: columns[0].id }));
-  b.base = clone({ columns: remote.columns, cards: remote.cards });
+  const people = mergeList(b.base.people, b.people, remote.people || []);
+  const personIds = new Set(people.map((p) => p.id));
+  b.people = people;
+  b.cards = mergeList(b.base.cards, b.cards, remote.cards).map((c) => {
+    const members = c.members.filter((id) => personIds.has(id));
+    return {
+      ...c,
+      col: colIds.has(c.col) ? c.col : columns[0].id,
+      members,
+      lead: members.includes(c.lead) ? c.lead : null,
+    };
+  });
+  b.base = clone({ columns: remote.columns, people: remote.people || [], cards: remote.cards });
   b.version = remote.version;
   b.name = remote.name;
   renderBoard();
@@ -779,8 +933,8 @@ async function poll() {
   try {
     const r = await api("GET", `boards/${b.id}?v=${b.version}`, null, b.token);
     if (B !== b || r.unchanged || b.dirty || b.saving || b.editing || b.dragging) return;
-    Object.assign(b, { version: r.version, name: r.name, columns: r.columns, cards: r.cards });
-    b.base = clone({ columns: r.columns, cards: r.cards });
+    Object.assign(b, { version: r.version, name: r.name, columns: r.columns, people: r.people || [], cards: r.cards });
+    b.base = clone({ columns: r.columns, people: b.people, cards: r.cards });
     saveSession(b.id, b.name);
     renderBoard();
     setSync("saved");
@@ -965,7 +1119,7 @@ function importFromFile() {
       const titleById = new Map((data.columns || []).map((c) => [c.id, String(c.title).toLowerCase()]));
       const colByTitle = new Map(B.columns.map((c) => [c.title.toLowerCase(), c.id]));
       const cards = (data.cards || []).map((c) => ({ ...c, col: findCol(c.col) ? c.col : colByTitle.get(titleById.get(c.col)) }));
-      toast(`Импортировано: ${cardsWord(importCards(cards))}`);
+      toast(`Импортировано: ${cardsWord(importCards(cards, data.people))}`);
     } catch {
       toast("Не получилось прочитать файл");
     }
@@ -977,7 +1131,7 @@ function boardMenu(anchor) {
   menu(anchor, [
     { label: "Скопировать ссылку", fn: share },
     { label: "Настройки доски", fn: openSettings },
-    { label: "Экспорт в JSON", fn: () => download(`${B.name}.json`, { name: B.name, columns: B.columns, cards: B.cards, exportedAt: new Date().toISOString() }) },
+    { label: "Экспорт в JSON", fn: () => download(`${B.name}.json`, { name: B.name, columns: B.columns, people: B.people, cards: B.cards, exportedAt: new Date().toISOString() }) },
     { label: "Импорт из JSON", fn: importFromFile },
     { label: "Выйти с этой доски", fn: () => { const id = B.id; closeBoard(); clearToken(id); location.hash = "#/"; } },
   ]);

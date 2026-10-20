@@ -195,19 +195,21 @@ function field(label, input) {
 }
 
 function openPanel() {
-  const idInput = h("input", { name: "board", required: true, placeholder: "Ссылка или ID", autocomplete: "off" });
   const pwInput = h("input", { name: "password", type: "password", required: true, autocomplete: "current-password" });
   const err = h("p", { class: "error" });
   const btn = h("button", { class: "btn primary", type: "submit" }, "Открыть");
+  const picker = boardPicker((b) => {
+    if (sessions()[b.id]?.token) location.hash = `#/b/${b.id}`; // уже входили — пароль не нужен
+    else pwInput.focus();
+  });
   return h("section", { class: "panel" },
     h("h2", {}, "Открыть доску"),
     h("form", {
       onsubmit: async (e) => {
         e.preventDefault();
         err.textContent = "";
-        const raw = idInput.value.trim();
-        const id = (raw.match(/#\/b\/([a-zA-Z0-9_-]+)/) || [])[1] || raw;
-        if (!/^[a-zA-Z0-9_-]{1,24}$/.test(id)) { err.textContent = "Не похоже на ссылку или ID доски"; return; }
+        const id = picker.selectedId();
+        if (!id) { err.textContent = "Выбери доску из списка или вставь ссылку"; return; }
         btn.disabled = true;
         try {
           const r = await api("POST", `boards/${id}/login`, { password: pwInput.value });
@@ -219,10 +221,129 @@ function openPanel() {
         }
       },
     },
-      field("Доска", idInput),
+      field("Доска", picker.el),
       field("Пароль", pwInput),
       err, btn)
   );
+}
+
+// выпадающий список досок с поиском; принимает и вставленную ссылку / ID
+function boardPicker(onPick) {
+  const input = h("input", {
+    name: "board", placeholder: "Начни вводить название…", autocomplete: "off", spellcheck: "false",
+    role: "combobox", "aria-expanded": "false", "aria-autocomplete": "list",
+  });
+  const list = h("ul", { class: "combo-list", role: "listbox", hidden: true });
+  const wrap = h("div", { class: "combo" }, input, list);
+  let items = [];
+  let total = 0;
+  let active = -1;
+  let selected = null;
+  let reqNo = 0;
+  let timer = null;
+  let loading = false;
+
+  const linkId = (s) => {
+    const m = s.match(/#\/b\/([a-zA-Z0-9_-]{1,24})/);
+    return m ? m[1] : null;
+  };
+
+  function open(on) {
+    list.hidden = !on;
+    input.setAttribute("aria-expanded", String(on));
+  }
+
+  function render() {
+    const mine = sessions();
+    const rows = items.map((b, i) =>
+      h("li", {
+        class: "combo-item" + (i === active ? " active" : "") + (selected?.id === b.id ? " selected" : ""),
+        role: "option",
+        onmousedown: (e) => e.preventDefault(), // не терять фокус поля
+        onclick: () => pick(b),
+        onmousemove: () => { if (active !== i) { active = i; render(); } },
+      },
+        h("span", { class: "combo-name" }, b.name),
+        mine[b.id]?.token ? h("span", { class: "combo-tag" }, "вход выполнен") : h("span", { class: "combo-id" }, b.id))
+    );
+    const note = loading && !items.length ? "Ищу…"
+      : !items.length ? (input.value.trim() ? "Ничего не нашлось" : "Досок пока нет")
+      : total > items.length ? `Показаны ${items.length} из ${total} — уточни поиск` : null;
+    list.replaceChildren(...rows, ...(note ? [h("li", { class: "combo-note" }, note)] : []));
+    list.querySelector(".active")?.scrollIntoView({ block: "nearest" });
+  }
+
+  async function load() {
+    const q = input.value.trim();
+    const id = linkId(q);
+    if (id) { // вставили ссылку
+      selected = { id, name: id };
+      items = [];
+      open(false);
+      return;
+    }
+    const no = ++reqNo;
+    loading = true;
+    render();
+    try {
+      const r = await api("GET", `boards?q=${encodeURIComponent(q)}`);
+      if (no !== reqNo) return;
+      items = r.boards;
+      total = r.total;
+      active = items.length ? 0 : -1;
+    } catch (e) {
+      if (no !== reqNo) return;
+      items = [];
+      total = 0;
+    }
+    loading = false;
+    if (document.activeElement === input) open(true);
+    render();
+  }
+
+  function pick(b) {
+    selected = b;
+    input.value = b.name;
+    open(false);
+    onPick(b);
+  }
+
+  input.addEventListener("focus", () => { open(true); load(); });
+  input.addEventListener("blur", () => setTimeout(() => open(false), 120));
+  input.addEventListener("input", () => {
+    selected = null;
+    clearTimeout(timer);
+    timer = setTimeout(load, 200);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (list.hidden) { open(true); return load(); }
+      if (!items.length) return;
+      active = (active + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+      render();
+    } else if (e.key === "Enter" && !list.hidden && items[active]) {
+      e.preventDefault();
+      pick(items[active]);
+    } else if (e.key === "Escape") {
+      open(false);
+    }
+  });
+
+  return {
+    el: wrap,
+    selectedId() {
+      if (selected) return selected.id;
+      const v = input.value.trim();
+      const id = linkId(v);
+      if (id) return id;
+      // точное совпадение названия или единственный результат
+      const exact = items.filter((b) => b.name.toLowerCase() === v.toLowerCase());
+      if (exact.length === 1) return exact[0].id;
+      if (v && items.length === 1) return items[0].id;
+      return null;
+    },
+  };
 }
 
 // proof-of-work: запускается, когда человек начинает заполнять форму создания
@@ -250,6 +371,7 @@ function createPanel() {
   const pw = h("input", { name: "password", type: "password", required: true, minlength: 6, autocomplete: "new-password" });
   const pw2 = h("input", { name: "password2", type: "password", required: true, minlength: 6, autocomplete: "new-password" });
   // honeypot — невидимое поле, его заполняют только боты
+  const listed = h("input", { type: "checkbox", checked: true });
   const trap = h("input", { name: "website", tabindex: "-1", autocomplete: "off", "aria-hidden": "true" });
   const status = h("p", { class: "muted small" }, "Пароль понадобится, чтобы открыть доску с другого устройства.");
   const err = h("p", { class: "error" });
@@ -275,7 +397,7 @@ function createPanel() {
         if (wait > 0) await sleep(wait);
         btn.textContent = "Создаю…";
         const r = await api("POST", "boards", {
-          name: name.value, password: pw.value, website: trap.value,
+          name: name.value, password: pw.value, website: trap.value, listed: listed.checked,
           challenge: { id: ch.id, nonce: ch.nonce },
         });
         saveSession(r.id, r.name, r.token);
@@ -292,6 +414,7 @@ function createPanel() {
     field("Название", name),
     field("Пароль", pw),
     field("Пароль ещё раз", pw2),
+    h("label", { class: "check" }, listed, "Показывать в списке досок (без пароля всё равно не открыть)"),
     h("label", { class: "trap" }, "Не заполняйте", trap),
     status, err, btn);
 
@@ -368,7 +491,7 @@ async function openBoard(id) {
 
   saveSession(id, data.name, sess.token);
   B = {
-    id, token: sess.token, name: data.name, version: data.version,
+    id, token: sess.token, name: data.name, version: data.version, listed: data.listed,
     columns: data.columns, people: data.people || [], cards: data.cards,
     base: clone({ columns: data.columns, people: data.people || [], cards: data.cards }),
     dirty: false, saving: false, failures: 0, importDone: false,
@@ -924,6 +1047,7 @@ function mergeRemote(remote) {
   b.base = clone({ columns: remote.columns, people: remote.people || [], cards: remote.cards });
   b.version = remote.version;
   b.name = remote.name;
+  b.listed = remote.listed;
   renderBoard();
 }
 
@@ -933,7 +1057,7 @@ async function poll() {
   try {
     const r = await api("GET", `boards/${b.id}?v=${b.version}`, null, b.token);
     if (B !== b || r.unchanged || b.dirty || b.saving || b.editing || b.dragging) return;
-    Object.assign(b, { version: r.version, name: r.name, columns: r.columns, people: r.people || [], cards: r.cards });
+    Object.assign(b, { version: r.version, name: r.name, listed: r.listed, columns: r.columns, people: r.people || [], cards: r.cards });
     b.base = clone({ columns: r.columns, people: b.people, cards: r.cards });
     saveSession(b.id, b.name);
     renderBoard();
@@ -1143,6 +1267,7 @@ function openSettings() {
   const pw = h("input", { type: "password", minlength: 6, autocomplete: "new-password", placeholder: "Оставь пустым, чтобы не менять" });
   const pw2 = h("input", { type: "password", minlength: 6, autocomplete: "new-password" });
   const current = h("input", { type: "password", required: true, autocomplete: "current-password" });
+  const listed = h("input", { type: "checkbox", checked: b.listed !== false });
   const err = h("p", { class: "error" });
   const dlg = h("dialog", { class: "dlg" });
   const close = () => dlg.close();
@@ -1155,10 +1280,12 @@ function openSettings() {
       const body = { current: current.value };
       if (name.value.trim() !== b.name) body.name = name.value;
       if (pw.value) body.password = pw.value;
+      if (listed.checked !== b.listed) body.listed = listed.checked;
       try {
         const r = await api("POST", `boards/${b.id}/settings`, body, b.token);
         b.token = r.token;
         b.name = r.name;
+        b.listed = r.listed;
         saveSession(b.id, r.name, r.token);
         renderBoard();
         close();
@@ -1174,6 +1301,7 @@ function openSettings() {
     field("Название", name),
     field("Новый пароль", pw),
     field("Новый пароль ещё раз", pw2),
+    h("label", { class: "check" }, listed, "Показывать в списке досок на главной"),
     field("Текущий пароль", current),
     err,
     h("div", { class: "row end" },

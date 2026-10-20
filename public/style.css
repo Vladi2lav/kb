@@ -136,6 +136,30 @@ input, textarea { font: inherit; color: var(--text); }
   font-size: 15px;
 }
 .field input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--muted); cursor: pointer; }
+.check input { margin: 2px 0 0; accent-color: var(--accent); }
+
+/* выбор доски с поиском */
+.combo { position: relative; }
+.combo input { width: 100%; }
+.combo-list {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
+  list-style: none; margin: 0; padding: 4px;
+  max-height: 280px; overflow: auto;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .25);
+}
+.combo-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 14px;
+}
+.combo-item.active { background: var(--drop); }
+.combo-item.selected .combo-name { font-weight: 600; }
+.combo-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-id { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
+.combo-tag { font-size: 11px; color: var(--ok); white-space: nowrap; }
+.combo-note { padding: 8px 10px; font-size: 13px; color: var(--muted); }
 .trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 
 .boards { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

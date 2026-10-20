@@ -1,0 +1,10 @@
+{
+  "name": "kanban",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
